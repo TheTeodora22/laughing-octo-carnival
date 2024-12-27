@@ -19,6 +19,10 @@
     instr: .space 4
     memory: .zero 1048576
     formatString: .asciz "%ld"
+    filepath: .space 256
+    fpformat: .asciz "%s"
+    file_stat: .space 1024
+    fd: .space 1024
     byteformatString: .asciz "%d"
     addOutput: .asciz "%d: ((%d, %d), (%d, %d))\n"
     getOutput: .asciz "((%d, %d), (%d, %d))\n"
@@ -366,7 +370,7 @@
             movl $0, j
             defr_j:
                 cmpl $1024, j
-                je scadere
+                je rest
 
                 movl $1024, %eax
                 movl i, %ebx
@@ -389,10 +393,9 @@
             defr:
                 addl $1, j
                 jmp defr_j
-            scadere:
-                cmpl $1024, %ecx
-                je defr_i
             rest:
+                cmpl $0, %ecx
+                je comp_lines
                 cmpl $1024, %ecx
                 je comp_lines
 
@@ -408,17 +411,14 @@
                 movl i, %eax
                 movl %eax, i1
                 multiple_lines:
-                addl $1, i1
-                cmpl $1024,i1
-                je defr_i
-                cmpl $1023, i
-                je defafis
-                movl $0, size
-                movl $-1, j
+                    addl $1, i1
+                    cmpl $1024,i1
+                    je defr_i
+                    movl $0, size
+                    movl $-1, j
                 rest_size:
                     movl $-1,j2
                     j_blocks:
-
                         addl $1, j2
                         movl j2, %eax
                         cmpl $1024, %eax
@@ -437,27 +437,8 @@
 
                         movl j2, %eax
                         movl %eax,j1
-                    j2_blocks:
-                        addl $1, j2
-                        movl j2, %eax
-                        cmpl $1024, %eax
-                        jae blocksret
-
-                        movl $1024, %eax
-                        movl i, %ecx
-                        mul %ecx
-                        addl j2, %eax
-
-                        cmpl $1048576, %eax       
-                        jae blocksret
-
-                        xorl %ecx, %ecx
-                        movb (%edi, %eax, 1),%cl
-
-                        cmpl %ecx, %ebx
-                        je j2_blocks
                     blocksret:
-                        movl j2, %eax
+                        movl $1024, %eax
                         subl j1, %eax
                         movl %eax, rem_size
                         movl j1, %eax
@@ -528,7 +509,7 @@
                 move_line:
                     movl size, %eax
                     cmpl $0, %eax
-                    je multiple_lines
+                    je rest_size
 
                     xorl %edx, %edx
                     movb (%edi,%ebx,1), %dl
@@ -603,7 +584,167 @@
                     jmp defr_dif_0
         defrexit:
             ret
+    FCONCRETE:
+        lea memory, %edi 
+        ; Read filepath
+        pushl $filepath
+        pushl $fpformat
+        call scanf
+        addl $8, %esp
 
+        movl $5, %eax                          # syscall: open
+        movl $filepath, %ebx                   # File path
+        movl $0, %ecx                          # Flags: O_RDONLY
+        int $0x80                              # Perform system call
+        testl %eax, %eax                       # Check if open returned -1
+        js error                               # If error, jump to error
+        movl %eax, fd
+
+        # Step 2: Calculate fd = (fds % 255) + 1
+        xorl %edx, %edx
+        movl $255, %ebx
+        divl %ebx
+        movl %edx, %eax
+        addl $1, %eax
+        movl %eax, d
+
+        movl $108, %eax                        # syscall: fstat
+        movl d, %ebx                        # File descriptor
+        movl $file_stat, %ecx                  # Pointer to struct stat
+        int $0x80                              # Perform system call
+        testl %eax, %eax                       # Check if fstat returned -1
+        js error                               # If error, jump to error
+
+    # Step 4: Calculate size = fileStat.st_size / 1024
+        movl file_stat + 48, %eax              # Load st_size (offset 48 in struct stat)
+        xorl %edx, %edx                        # Clear %edx for division
+        movl $1024, %ecx                       # Divisor
+        divl %ecx                              # Perform division
+        movl %eax, size                # Store result in size_buffer
+        
+    # Step 5: Close the file
+        movl $6, %eax                          # syscall: close
+        movl d, %ebx                        # File descriptor
+        int $0x80                              # Perform system call
+
+    ;check if it appears
+    call fdcheck
+    cmpl $1, %eax
+    jmp DISPLAY_NONE
+    movl $-1, i
+    I_LOOP:
+        addl $1, i
+        movl i, %eax
+        cmpl $1024, %eax
+        je DISPLAY_NONE
+
+        movl $0, j1
+        movl $0, j2
+        movl $-1, j
+
+    J_LOOP:
+        addl $1, j
+        movl j, %eax
+        cmpl $1024, %eax
+        jae I_LOOP
+        
+        movl $1024, %eax
+        movl i, %ebx
+        mul %ebx
+        addl j, %eax
+
+        xorl %edx, %edx
+        movb (%edi, %eax, 1), %dl
+        cmp $0, %edx
+        jne J_LOOP
+
+    SET_J1:
+        movl j, %eax
+        movl %eax, j1
+
+    FIND_J2:
+        addl $1, j
+        movl j, %eax
+        cmpl $1024, %eax
+        je SET_J2
+
+        movl $1024, %eax
+        movl i, %ebx
+        mul %ebx
+        addl j, %eax
+
+        xorl %edx, %edx
+        movb (%edi, %eax, 1), %dl
+        cmp $0, %edx
+        je FIND_J2
+
+    SET_J2:
+        subl $1, j
+        movl j, %eax
+        movl %eax, j2
+
+    CHECK_SPACE:
+        addl $1, %eax
+        subl j1, %eax
+        movl %eax, dif
+
+        cmpl size, %eax
+        ja J_LOOP
+
+        movl j1, %ecx
+        addl size, %ecx
+        movl %ecx, ult
+        movl j1, %ecx
+
+    ADD_VALUES:
+        cmpl ult, %ecx
+        je DISPLAY
+        movl $1024, %eax
+        movl i, %ebx
+        mul %ebx
+        addl %ecx, %eax
+
+        xorl %edx, %edx
+        movb d, %dl
+        movb %dl, (%edi, %eax, 1)
+        addl $1, %ecx
+        jmp ADD_VALUES    
+
+    DISPLAY:
+        subl $1, ult
+        pushl ult
+        pushl i
+        pushl j1
+        pushl i
+        xorl %eax, %eax
+        movb d, %al
+        pushl %eax
+        pushl $addOutput
+        call printf
+        addl $24, %esp  ; Clean up the stack
+
+        pushl $0
+        call fflush
+        addl $4, %esp
+
+        jmp EXIT
+    DISPLAY_NONE:
+        pushl d
+        pushl $noSpaceMsg
+        call printf
+        addl $8, %esp
+
+        pushl $0
+        call fflush
+        addl $4, %esp
+    error:
+        movl $-1, %eax
+    EXIT:
+        ret
+
+    fdcheck:
+        movl %esp, %ebp
+        
     FAFIS:  
         movl $0, %ebx
         loop:
@@ -666,26 +807,23 @@ instructiuni:
 
     cmpl $4, instr
     je DEFRAGMENTATION
+
+    cmpl $5, instr
+    je CONCRETE
 ADD:
     call FADD
-    pushl $0
-    call fflush
-    popl %ebx
     jmp instructiuni
 GET:
     call FGET
-    pushl $0
-    call fflush
-    popl %ebx
     jmp instructiuni
 DELETE:
     call FDELETE
-    pushl $0
-    call fflush
-    popl %ebx
     jmp instructiuni
 DEFRAGMENTATION:
     call FDEFRAGMENTATION
+    jmp instructiuni
+CONCRETE:
+    call FCONCRETE
     jmp instructiuni
 etexit:
     pushl $0

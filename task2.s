@@ -22,9 +22,9 @@
     byteformatString: .asciz "%d"
     addOutput: .asciz "%d: ((%d, %d), (%d, %d))\n"
     getOutput: .asciz "((%d, %d), (%d, %d))\n"
-    noSpaceMsg: .asciz "(0, 0)\n"
+    noSpaceMsg: .asciz "%d: ((0, 0), (0, 0))\n"
     nothing: .asciz "((0, 0), (0, 0))\n"
-    debugMsg: .asciz "SUNT AICI %d\n"
+    debugMsg: .asciz "\nSUNT AICI %d\n"
     debugMsg2: .asciz "%d "
     newLine: .asciz "\n"
     
@@ -69,7 +69,7 @@
             addl $1, i
             movl i, %eax
             cmp $1024, %eax
-            je LOOP_ADD
+            je afisare_nimic
             movl $0, j1
             movl $0, j2
             movl $-1, j
@@ -158,8 +158,10 @@
 
                 jmp LOOP_ADD
             afisare_nimic:
-                pushl $nothing
+                pushl d
+                pushl $noSpaceMsg
                 call printf
+                popl %ebx
                 popl %ebx
 
                 pushl $0
@@ -390,7 +392,6 @@
             scadere:
                 cmpl $1024, %ecx
                 je defr_i
-                subl $1, %ecx
             rest:
                 cmpl $1024, %ecx
                 je comp_lines
@@ -406,7 +407,10 @@
             comp_lines:
                 movl i, %eax
                 movl %eax, i1
+                multiple_lines:
                 addl $1, i1
+                cmpl $1024,i1
+                je defr_i
                 cmpl $1023, i
                 je defafis
                 movl $0, size
@@ -418,7 +422,7 @@
                         addl $1, j2
                         movl j2, %eax
                         cmpl $1024, %eax
-                        je defafis
+                        je defr_i
 
                         movl $1024, %eax
                         movl i, %ecx
@@ -440,7 +444,7 @@
                         jae blocksret
 
                         movl $1024, %eax
-                        movl i2, %ecx
+                        movl i, %ecx
                         mul %ecx
                         addl j2, %eax
 
@@ -463,7 +467,7 @@
                     c_size:
                         addl $1, j
                         cmpl $1024, j
-                        je defr_i
+                        je multiple_lines
                     
                         movl $1024, %eax
                         movl i1, %ebx
@@ -505,7 +509,7 @@
                             movl %eax, size
 
                             cmpl rem_size, %eax
-                            jg mem_loop_i
+                            jg defr_i
                 put_defr:
                     movl $1024, %eax
                     movl i, %ebx
@@ -524,7 +528,7 @@
                 move_line:
                     movl size, %eax
                     cmpl $0, %eax
-                    je comp_lines
+                    je multiple_lines
 
                     xorl %edx, %edx
                     movb (%edi,%ebx,1), %dl
@@ -582,6 +586,7 @@
                     cmpl %ecx, %ebx
                     je defr_j2_find
                 defr_mem_afis:
+                    subl $1, j
                     movl j, %eax
                     movl %eax, j2
 
@@ -595,7 +600,6 @@
                     addl $24, %esp
 
                     lea memory, %edi
-                    subl $1, j
                     jmp defr_dif_0
         defrexit:
             ret
@@ -682,7 +686,6 @@ DELETE:
     jmp instructiuni
 DEFRAGMENTATION:
     call FDEFRAGMENTATION
-    call FAFIS
     jmp instructiuni
 etexit:
     pushl $0
